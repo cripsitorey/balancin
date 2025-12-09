@@ -1,290 +1,316 @@
-import pygame
-import random
-import math
+import pygame  # Importa la librería Pygame para crear la ventana y manejar gráficos.
+import random  # Importa la librería para generar números aleatorios (pesos y posiciones).
+import math    # Importa la librería matemática para funciones trigonométricas (seno, coseno).
 
 # --- Inicialización de Pygame ---
-pygame.init()
+pygame.init()  # Inicializa todos los módulos internos de Pygame (imprescindible para empezar).
 
-# --- Constantes ---
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-FPS = 60
+# --- Constantes (Valores fijos del juego) ---
+SCREEN_WIDTH = 800   # Ancho de la ventana en píxeles.
+SCREEN_HEIGHT = 600  # Alto de la ventana en píxeles.
+FPS = 60             # Cuadros por segundo: velocidad de actualización del juego.
 
-# Colores
+# Definición de colores usando el formato RGB (Rojo, Verde, Azul).
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
-# Constantes del juego
-PLAYER_WEIGHT = 60   # Peso fijo del jugador en kg
-PLAYER_SPEED = 4      # Píxeles por frame que se mueve el jugador
-BOARD_LENGTH = 400    # Longitud de la tabla (de -200 a 200)
-GAME_OVER_ANGLE = 45  # Ángulo en grados para perder
-TORQUE_FACTOR = 0.000009 # Sensibilidad de la física (ajústalo si es muy rápido/lento)
-INITIAL_SPAWN_RATE = 120 # Frames entre cajas (2 segundos a 60 FPS)
+# Variables de configuración de la física y jugabilidad.
+PLAYER_WEIGHT = 60       # Peso del jugador para el cálculo de torque.
+PLAYER_SPEED = 4         # Velocidad de movimiento lateral (píxeles por actualización).
+BOARD_LENGTH = 400       # Largo total de la tabla de balance.
+GAME_OVER_ANGLE = 45     # Ángulo límite de inclinación antes de perder.
+TORQUE_FACTOR = 0.000009 # Factor de escala para convertir torque en aceleración (ajuste de sensibilidad).
+INITIAL_SPAWN_RATE = 120 # Frames iniciales para que aparezca una caja (120 frames / 60 FPS = 2 segundos).
 
 # --- Configuración de la Pantalla ---
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Juego de Balance")
-clock = pygame.time.Clock()
-main_font = pygame.font.Font(None, 36)
-box_font = pygame.font.Font(None, 20)
-go_font = pygame.font.Font(None, 72)
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT)) # Crea la ventana gráfica.
+pygame.display.set_caption("Juego de Balance") # Pone el título en la barra superior de la ventana.
+clock = pygame.time.Clock() # Crea un reloj para controlar los FPS (velocidad del juego).
+
+# Fuentes de texto para mostrar información en pantalla.
+main_font = pygame.font.Font(None, 36) # Fuente por defecto, tamaño 36.
+box_font = pygame.font.Font(None, 20)  # Fuente pequeña para los pesos de las cajas.
+go_font = pygame.font.Font(None, 72)   # Fuente grande para "GAME OVER".
 
 # --- Clases del Juego ---
 
 class Player:
     def __init__(self, peso):
-        self.peso = peso
-        self.pos_x = 0  # Posición horizontal relativa al centro (pivote)
-        self.width = 20
-        self.height = 40
-        self.color = BLUE 
+        self.peso = peso      # Guarda el peso del jugador.
+        self.pos_x = 0        # Posición inicial en el centro de la tabla (0 es el pivote).
+        self.width = 20       # Ancho visual del jugador.
+        self.height = 40      # Alto visual del jugador.
+        self.color = BLUE     # Color del jugador.
 
     def move(self, dx):
-        # Mover al jugador, con límites para que no se caiga de la tabla
+        # Actualiza la posición sumando el desplazamiento (dx puede ser positivo o negativo).
         self.pos_x += dx
         
+        # Calcula el límite para que el jugador no se salga visualmente de la tabla.
+        # Longitud media de la tabla menos la mitad del ancho del jugador.
         max_pos = (BOARD_LENGTH / 2) - (self.width / 2)
+        
+        # Si se pasa a la derecha, corregir posición al máximo permitido.
         if self.pos_x > max_pos:
             self.pos_x = max_pos
+        # Si se pasa a la izquierda, corregir posición al mínimo permitido.
         if self.pos_x < -max_pos:
             self.pos_x = -max_pos
 
     def draw(self, surface, board_center_y, board_angle):
-        # --- Lógica de Dibujo en Rotación ---
+        # Convierte el ángulo de grados a radianes porque math.cos y math.sin usan radianes.
         rad_angle = math.radians(board_angle)
         
-        # 1. Calcular la posición (x, y) de los pies del jugador sobre la tabla inclinada
-        # (cx + r*cos(a), cy + r*sin(a)) donde r=pos_x
-        # Usamos +sin() porque en pygame el eje Y está invertido (positivo es hacia abajo)
+        # --- Cálculo de trigonometría para ubicar al jugador sobre la tabla inclinada ---
+        # Coordenada X del pie: Centro pantalla + (Distancia desde el centro * Coseno del ángulo).
+        # Esto proyecta la posición horizontal considerando la rotación.
         foot_x = (SCREEN_WIDTH / 2) + self.pos_x * math.cos(rad_angle)
+        
+        # Coordenada Y del pie: Centro Y de la tabla + (Distancia * Seno del ángulo).
+        # Esto calcula cuánto sube o baja el punto de apoyo debido a la inclinación.
         foot_y = board_center_y + self.pos_x * math.sin(rad_angle)
         
-        # 2. Calcular la esquina superior izquierda del rectángulo para dibujarlo
-        # El jugador se dibuja "parado" (vertical), no inclinado
-        draw_x = foot_x - (self.width / 2)
-        draw_y = foot_y - self.height
+        # Ajusta las coordenadas para dibujar desde la esquina superior izquierda del rectángulo.
+        draw_x = foot_x - (self.width / 2) # Centrar horizontalmente respecto al punto de apoyo.
+        draw_y = foot_y - self.height      # Subir la altura del jugador para que los pies toquen la tabla.
         
+        # Dibuja el rectángulo del jugador en la pantalla.
         pygame.draw.rect(surface, self.color, (draw_x, draw_y, self.width, self.height))
 
 
 class Box:
     def __init__(self):
-        self.peso = random.randint(10, 50) # Peso en KG
-        # Posición X donde caerá (con un margen para que no caiga justo en el borde)
+        # Asigna propiedades aleatorias a cada nueva caja.
+        self.peso = random.randint(10, 50) # Peso aleatorio entre 10kg y 50kg.
+        
+        # Posición X aleatoria dentro de los límites de la tabla (-mitad a +mitad, con margen).
         self.pos_x = random.randint(int(-BOARD_LENGTH/2 + 20), int(BOARD_LENGTH/2 - 20))
-        self.pos_y = 0 # Posición Y (superior de la caja)
-        self.width = 30
-        self.height = 30
-        self.color = RED
-        self.fall_speed = 3
-        self.is_falling = True
+        
+        self.pos_y = 0         # Comienza en la parte superior de la pantalla.
+        self.width = 30        # Ancho de la caja.
+        self.height = 30       # Alto de la caja.
+        self.color = RED       # Color de la caja.
+        self.fall_speed = 3    # Velocidad de caída en píxeles.
+        self.is_falling = True # Bandera (flag) para saber si está en el aire o ya cayó.
 
     def update(self, board_center_y, board_angle):
+        # Solo actualizamos la posición si la caja está cayendo.
         if self.is_falling:
-            self.pos_y += self.fall_speed
+            self.pos_y += self.fall_speed # Aumenta Y para que baje.
             
-            # --- Lógica de Colisión con Tabla Inclinada ---
-            rad_angle = math.radians(board_angle)
+            # --- Detección de colisión con la tabla ---
+            rad_angle = math.radians(board_angle) # Convertir ángulo actual de la tabla a radianes.
             
-            # Calcular la altura Y de la superficie de la tabla en el self.pos_x de la caja
-            # board_y = center_y + x * sin(angle)
+            # Calculamos a qué altura (Y) está la tabla justo debajo de esta caja.
+            # Y de la tabla = Centro Y + (Distancia X * Seno del ángulo).
             board_height_at_x = board_center_y + self.pos_x * math.sin(rad_angle)
 
-            # Comprobar si la parte inferior de la caja (self.pos_y + self.height) ha golpeado la tabla
+            # Si la parte inferior de la caja (pos_y + height) toca o pasa la altura de la tabla...
             if self.pos_y + self.height >= board_height_at_x:
-                self.pos_y = board_height_at_x - self.height # Ajustar la caja para que quede "sobre" la tabla
-                self.is_falling = False
+                self.pos_y = board_height_at_x - self.height # Corregir posición para que quede justo encima.
+                self.is_falling = False # Marcar como "aterrizada", ahora es parte del peso de la tabla.
 
     def draw(self, surface, board_center_y, board_angle):
         rad_angle = math.radians(board_angle)
         
         if self.is_falling:
-            # Dibujo simple mientras cae (centrado horizontalmente)
+            # Si cae, dibujamos en coordenadas normales (sin rotación).
+            # draw_x se calcula desde el centro de la pantalla + su desplazamiento relativo.
             draw_x = (SCREEN_WIDTH / 2) + self.pos_x - (self.width / 2)
             draw_y = self.pos_y
             pygame.draw.rect(surface, self.color, (draw_x, draw_y, self.width, self.height))
         
         else:
-            # --- Lógica de Dibujo en Rotación (cuando ya aterrizó) ---
-            # 1. Calcular la posición (x, y) de la base de la caja
+            # Si ya aterrizó, debe rotar junto con la tabla.
+            # Calculamos su posición rotada igual que con el jugador.
             base_x = (SCREEN_WIDTH / 2) + self.pos_x * math.cos(rad_angle)
             base_y = board_center_y + self.pos_x * math.sin(rad_angle)
             
-            # 2. Calcular la esquina superior izquierda
+            # Ajuste para dibujar desde la esquina superior izquierda.
             draw_x = base_x - (self.width / 2)
             draw_y = base_y - self.height
             pygame.draw.rect(surface, self.color, (draw_x, draw_y, self.width, self.height))
 
-        # Dibujar el peso (texto)
-        # La posición del texto debe seguir a la caja
-        text = box_font.render(f"{self.peso}kg", True, WHITE)
+        # --- Dibujar el texto del peso sobre la caja ---
+        text = box_font.render(f"{self.peso}kg", True, WHITE) # Crear superficie de texto.
+        # Obtener rectángulo centrado en la caja.
         text_rect = text.get_rect(center=(draw_x + self.width / 2, draw_y + self.height / 2))
-        surface.blit(text, text_rect)
+        surface.blit(text, text_rect) # Dibujar el texto en la pantalla.
 
 
 class Board:
     def __init__(self):
-        self.angle = 0.0 # Ángulo en grados
-        self.angular_velocity = 0.0 # Velocidad de rotación
-        self.angular_acceleration = 0.0 # Aceleración de rotación
+        # Variables físicas para la rotación.
+        self.angle = 0.0               # Ángulo actual (posición).
+        self.angular_velocity = 0.0    # Velocidad actual (qué tan rápido gira).
+        self.angular_acceleration = 0.0 # Aceleración (cómo cambia la velocidad según el peso).
         
-        self.length = BOARD_LENGTH
-        self.center_x = SCREEN_WIDTH / 2
-        self.center_y = SCREEN_HEIGHT - 150 # Altura del pivote
-        self.pivot_height = 50 # Altura del soporte
+        self.length = BOARD_LENGTH     # Longitud de la tabla.
+        self.center_x = SCREEN_WIDTH / 2 # Pivote en el centro horizontal.
+        self.center_y = SCREEN_HEIGHT - 150 # Pivote cerca del fondo.
+        self.pivot_height = 50         # Altura visual del soporte triangular.
 
     def calculate_physics(self, player, boxes_on_board):
-        # --- ESTA ES LA LÓGICA PRINCIPAL DEL JUEGO ---
+        # --- Cálculo de momentos (Torque) ---
+        # Torque = Fuerza x Distancia.
         
-        # 1. Calcular torque del jugador
-        # Torque = Fuerza (Peso) * Distancia (pos_x)
+        # 1. Torque generado por el jugador:
+        # Si pos_x es positivo (derecha), torque positivo (gira horario).
+        # Si pos_x es negativo (izquierda), torque negativo (gira anti-horario).
         torque_player = player.peso * player.pos_x
         
-        # 2. Calcular torque de las cajas (sumar todas las cajas)
+        # 2. Torque generado por todas las cajas que han aterrizado.
         torque_boxes = 0
         for box in boxes_on_board:
-            if not box.is_falling: # Asegurarse de que solo contamos cajas que han aterrizado
-                torque_boxes += box.peso * box.pos_x
+            if not box.is_falling: # Doble verificación de seguridad.
+                torque_boxes += box.peso * box.pos_x # Sumatoria de torques.
             
-        # 3. Calcular Torque Neto
-        # Si es positivo, gira a la derecha (sentido horario)
-        # Si es negativo, gira a la izquierda (sentido anti-horario)
+        # 3. Torque Neto (Suma total de fuerzas de rotación).
         net_torque = torque_player + torque_boxes
         
-        # 4. Aplicar física
-        # La aceleración angular es proporcional al torque neto.
-        # Ajusta TORQUE_FACTOR para cambiar la "sensibilidad"
+        # 4. Segunda Ley de Newton para rotación: Torque = Inercia * Aceleración.
+        # Aquí simplificamos la Inercia asumiendo que es 1/TORQUE_FACTOR.
         self.angular_acceleration = net_torque * TORQUE_FACTOR
         
     def update(self):
-        # Actualizar la física (integración simple)
+        # --- Integración de Euler (Física básica) ---
+        # Velocidad nueva = Velocidad actual + Aceleración.
         self.angular_velocity += self.angular_acceleration
         
-        # Aplicar "fricción" o "amortiguación de velocidad"
-        # Esto evita que gire infinitamente rápido y lo hace más controlable.
+        # --- Fricción / Amortiguación ---
+        # Multiplicar por 0.98 reduce la velocidad un 2% en cada frame.
+        # Esto evita que la tabla oscile eternamente como un péndulo perfecto.
         self.angular_velocity *= 0.98 
         
-        # Limitar la velocidad angular máxima
+        # --- Límite de velocidad terminal ---
+        # Evita que la tabla gire descontroladamente rápido (glitch visual).
         max_vel = 5
         if self.angular_velocity > max_vel: self.angular_velocity = max_vel
         if self.angular_velocity < -max_vel: self.angular_velocity = -max_vel
 
+        # Posición nueva = Posición actual + Velocidad.
         self.angle += self.angular_velocity
 
     def draw(self, surface):
-        # 1. Dibujar el pivote (triángulo)
+        # 1. Dibujar el triángulo de soporte (pivote).
         pygame.draw.polygon(surface, GREEN, [
-            (self.center_x, self.center_y),
-            (self.center_x - 20, self.center_y + self.pivot_height),
-            (self.center_x + 20, self.center_y + self.pivot_height)
+            (self.center_x, self.center_y), # Punta superior (pivote).
+            (self.center_x - 20, self.center_y + self.pivot_height), # Base izq.
+            (self.center_x + 20, self.center_y + self.pivot_height)  # Base der.
         ])
         
-        # 2. Calcular los puntos finales de la tabla basada en el ángulo
+        # 2. Calcular coordenadas de los extremos de la tabla para dibujar la línea.
         rad_angle = math.radians(self.angle)
-        half_len = self.length / 2
+        half_len = self.length / 2 # Distancia del centro a un extremo.
         
-        # Punto izquierdo (start)
+        # Trigonometría para encontrar el extremo izquierdo (start).
+        # x = centro - radio * cos(a)
         start_x = self.center_x - (half_len * math.cos(rad_angle))
-        start_y = self.center_y - (half_len * math.sin(rad_angle)) # -sin() = arriba
+        # y = centro - radio * sin(a)
+        start_y = self.center_y - (half_len * math.sin(rad_angle))
         
-        # Punto derecho (end)
+        # Trigonometría para encontrar el extremo derecho (end).
+        # x = centro + radio * cos(a)
         end_x = self.center_x + (half_len * math.cos(rad_angle))
-        end_y = self.center_y + (half_len * math.sin(rad_angle)) # +sin() = abajo
+        # y = centro + radio * sin(a)
+        end_y = self.center_y + (half_len * math.sin(rad_angle))
         
-        # Dibujar la tabla (línea gruesa)
+        # Dibujar la línea que representa la tabla.
         pygame.draw.line(surface, WHITE, (start_x, start_y), (end_x, end_y), 10)
 
     def check_game_over(self):
-        # Comprobar si la tabla tocó el "suelo" (ángulo máximo)
+        # Si el valor absoluto del ángulo supera el límite, se pierde.
         if abs(self.angle) > GAME_OVER_ANGLE:
             return True
         return False
 
-# --- Bucle Principal del Juego ---
+# --- Función Principal (Main Loop) ---
 
 def main():
-    running = True
-    game_over = False
+    running = True      # Controla si la ventana sigue abierta.
+    game_over = False   # Controla el estado de "perdiste".
     
-    # Crear los objetos
-    player = Player(peso=PLAYER_WEIGHT)
-    board = Board()
+    # Instanciar objetos.
+    player = Player(peso=PLAYER_WEIGHT) # Crear jugador.
+    board = Board()                     # Crear tabla.
     
-    boxes = [] # Lista para guardar todas las cajas (cayendo y aterrizadas)
+    boxes = [] # Lista vacía para almacenar objetos Box.
     
-    box_spawn_timer = 0
-    spawn_rate = INITIAL_SPAWN_RATE # El tiempo entre cajas irá disminuyendo
-    time_survived = 0
+    box_spawn_timer = 0          # Contador de frames para generar cajas.
+    spawn_rate = INITIAL_SPAWN_RATE # Frecuencia de generación actual.
+    time_survived = 0            # Contador de tiempo de juego.
 
     while running:
-        # --- Manejo de Eventos ---
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+        # --- Procesamiento de Eventos ---
+        for event in pygame.event.get(): # Obtener cola de eventos (teclas, mouse, cerrar).
+            if event.type == pygame.QUIT: # Si se da clic en la X de la ventana.
                 running = False
-            if event.type == pygame.KEYDOWN:
+            if event.type == pygame.KEYDOWN: # Si se presiona una tecla.
                 if event.key == pygame.K_r and game_over:
-                    # Reiniciar el juego
-                    main() # Llama a main de nuevo para reiniciar
-                    return # Salir de la instancia actual de main
+                    # Reinicio: llamada recursiva a main() para empezar de cero.
+                    main() 
+                    return # Cierra la ejecución actual para no tener bucles dobles.
 
         if not game_over:
-            # --- Entradas (Input) ---
-            keys = pygame.key.get_pressed()
+            # --- Lectura de Teclado Continuo ---
+            keys = pygame.key.get_pressed() # Devuelve estado de todas las teclas.
             if keys[pygame.K_LEFT]:
-                player.move(-PLAYER_SPEED)
+                player.move(-PLAYER_SPEED) # Mover negativo (izquierda).
             if keys[pygame.K_RIGHT]:
-                player.move(PLAYER_SPEED)
+                player.move(PLAYER_SPEED)  # Mover positivo (derecha).
 
-            # --- Actualización (Update) ---
+            # --- Lógica del Juego ---
             
-            # 1. Spawneo de Cajas (con dificultad creciente)
+            # 1. Generador de cajas.
             box_spawn_timer += 1
             if box_spawn_timer > spawn_rate:
-                boxes.append(Box())
-                box_spawn_timer = 0
-                # Aumentar dificultad: hacer que aparezcan más rápido
-                if spawn_rate > 30: # Límite de 0.5 segundos por caja
-                    spawn_rate *= 0.98 # Se reduce un 2% cada vez
+                boxes.append(Box()) # Crear nueva caja y añadir a la lista.
+                box_spawn_timer = 0 # Resetear contador.
+                
+                # Aumentar dificultad reduciendo el tiempo de aparición.
+                if spawn_rate > 30: 
+                    spawn_rate *= 0.98 # Multiplicar por 0.98 reduce el valor un 2%.
 
-            # 2. Actualizar Cajas (hacerlas caer y detectar aterrizaje)
+            # 2. Filtrar cajas que están sobre la tabla para la física.
             boxes_on_board = []
             for box in boxes:
-                box.update(board.center_y, board.angle)
+                box.update(board.center_y, board.angle) # Mover caja / chequear colisión.
                 if not box.is_falling:
-                    boxes_on_board.append(box)
+                    boxes_on_board.append(box) # Solo cajas aterrizadas cuentan para el peso.
 
-            # 3. Calcular Física (El núcleo de tu lógica)
+            # 3. Calcular rotación de la tabla basada en pesos.
             board.calculate_physics(player, boxes_on_board)
             
-            # 4. Actualizar Estado de la Tabla
+            # 4. Mover la tabla según la física calculada.
             board.update()
             
-            # 5. Actualizar Score
-            time_survived += 1 / FPS # Sumar segundos
+            # 5. Sumar tiempo (1 / 60 segundos por frame).
+            time_survived += 1 / FPS 
 
-            # 6. Comprobar Game Over
+            # 6. Verificar condición de derrota.
             if board.check_game_over():
                 game_over = True
 
-        # --- Dibujo (Draw) ---
-        screen.fill(BLACK)
+        # --- Renderizado (Dibujo) ---
+        screen.fill(BLACK) # Limpiar pantalla pintándola de negro.
         
+        # Dibujar todos los elementos en su nueva posición.
         board.draw(screen)
         player.draw(screen, board.center_y, board.angle)
         for box in boxes:
             box.draw(screen, board.center_y, board.angle)
             
-        # Dibujar Score
+        # Dibujar el puntaje en la esquina.
         score_text = main_font.render(f"Tiempo: {int(time_survived)}s", True, WHITE)
-        screen.blit(score_text, (10, 10))
+        screen.blit(score_text, (10, 10)) # blit copia la superficie de texto a la pantalla principal.
 
         if game_over:
-            # Mostrar mensaje de Game Over
+            # Dibujar mensajes de fin de juego en el centro.
             go_text = go_font.render("GAME OVER", True, RED)
+            # get_rect(center=...) ayuda a centrar el texto automáticamente.
             go_rect = go_text.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50))
             screen.blit(go_text, go_rect)
             
@@ -292,14 +318,27 @@ def main():
             restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 20))
             screen.blit(restart_text, restart_rect)
 
-        # Actualizar la pantalla
+        # Intercambiar buffers (mostrar lo que acabamos de dibujar).
         pygame.display.flip()
 
-        # Controlar FPS
+        # Esperar lo necesario para mantener 60 FPS estables.
         clock.tick(FPS)
 
-    pygame.quit()
+    pygame.quit() # Cerrar Pygame correctamente al salir del bucle.
 
-# --- Ejecutar el juego ---
+# Bloque estándar de Python: asegura que main() solo corra si ejecutamos este archivo directamente.
 if __name__ == "__main__":
     main()
+
+
+#      /$$$$$$  /$$$$$$$  /$$$$$$ /$$$$$$$ 
+#     /$$__  $$| $$__  $$|_  $$_/| $$__  $$
+#    | $$  \__/| $$  \ $$  | $$  | $$  \ $$
+#    | $$      | $$$$$$$/  | $$  | $$$$$$$/
+#    | $$      | $$__  $$  | $$  | $$____/ 
+#    | $$    $$| $$  \ $$  | $$  | $$      
+#    |  $$$$$$/| $$  | $$ /$$$$$$| $$      
+#     \______/ |__/  |__/|______/|__/      
+#                                          
+#                                          
+#                                          

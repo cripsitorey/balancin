@@ -1,7 +1,7 @@
 # Simulación de Balancín con Física de Torques (Juego de Balance)
 
-**Versión:** 1.0.0  
-**Autor:** Emilio Cuenca  
+**Versión:** 1.0.1  
+**Autor:** Emilio Cuenca, Alex Gaior, Jose Velasco  
 **Asignatura:** Lógica de Programación - Ingeniería en Sistemas
 
 ---
@@ -121,4 +121,4 @@ Si la posición vertical de la caja (`pos_y + height`) es mayor o igual a $Y_{ta
 
 ---
 
-**© 2025 Emilio Cuenca.** Proyecto académico para la Universidad Internacional del Ecuador (UIDE).
+**© 2025 Emilio Cuenca, Alex Gaibor, Jose Velasco .** Proyecto académico para la Universidad Internacional del Ecuador (UIDE).
