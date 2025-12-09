@@ -1,0 +1,45 @@
+name: Compilar Juego Multiplataforma
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    name: Compilar en ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Esto crea 3 trabajos paralelos: uno para cada sistema operativo
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+    - name: Obtener el código
+      uses: actions/checkout@v4
+
+    - name: Instalar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' 
+
+    - name: Instalar Dependencias
+      run: |
+        pip install pygame pyinstaller
+
+    - name: Compilar con PyInstaller (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        pyinstaller --name "JuegoBalance" --onefile --noconsole main.py
+
+    - name: Compilar con PyInstaller (Linux/Mac)
+      if: runner.os != 'Windows'
+      run: |
+        pyinstaller --name "JuegoBalance" --onefile --noconsole main.py
+
+    - name: Subir el Ejecutable (Artifact)
+      uses: actions/upload-artifact@v4
+      with:
+        name: JuegoBalance-${{ matrix.os }}
+        path: dist/
