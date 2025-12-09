@@ -1,45 +1,91 @@
-name: Compilar Juego Multiplataforma
+name: Crear Release Multiplataforma
 
+# ESTO ES IMPORTANTE:
+# Se ejecuta SOLO cuando creas un tag que empiece por 'v' (ej: v1.0, v0.5)
 on:
   push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # Permiso necesario para crear Releases
 
 jobs:
   build:
-    name: Compilar en ${{ matrix.os }}
+    name: Compilar para ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Esto crea 3 trabajos paralelos: uno para cada sistema operativo
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact_name: JuegoBalance.exe
+            asset_name: JuegoBalance-Windows.exe
+          - os: ubuntu-latest
+            artifact_name: JuegoBalance
+            asset_name: JuegoBalance-Linux
+          - os: macos-latest
+            artifact_name: JuegoBalance
+            asset_name: JuegoBalance-MacOS
 
     steps:
-    - name: Obtener el código
+    - name: Obtener código
       uses: actions/checkout@v4
 
     - name: Instalar Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11' 
+        python-version: '3.11'
 
-    - name: Instalar Dependencias
+    - name: Instalar dependencias
       run: |
         pip install pygame pyinstaller
 
-    - name: Compilar con PyInstaller (Windows)
+    # Compilación
+    - name: Generar Ejecutable
+      run: |
+        pyinstaller --name "JuegoBalance" --onefile --noconsole main.py
+
+    # Renombrado estratégico para evitar conflictos
+    # (Movemos el archivo generado en dist/ al nombre final que queremos en la Release)
+    - name: Renombrar para Release (Windows)
       if: runner.os == 'Windows'
       run: |
-        pyinstaller --name "JuegoBalance" --onefile --noconsole main.py
+        move dist\${{ matrix.artifact_name }} dist\${{ matrix.asset_name }}
 
-    - name: Compilar con PyInstaller (Linux/Mac)
+    - name: Renombrar para Release (Unix)
       if: runner.os != 'Windows'
       run: |
-        pyinstaller --name "JuegoBalance" --onefile --noconsole main.py
+        mv dist/${{ matrix.artifact_name }} dist/${{ matrix.asset_name }}
 
-    - name: Subir el Ejecutable (Artifact)
+    # Subimos SOLO el archivo ejecutable renombrado, no la carpeta entera
+    - name: Subir Artifact Temporal
       uses: actions/upload-artifact@v4
       with:
-        name: JuegoBalance-${{ matrix.os }}
-        path: dist/
+        name: binary-${{ matrix.os }}
+        path: dist/${{ matrix.asset_name }}
+
+  publish:
+    name: Publicar Release en GitHub
+    needs: build # Espera a que los 3 builds terminen
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Descargar todos los artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: true 
+        # 'merge-multiple: true' descarga todos los archivos en una sola carpeta 'artifacts/' 
+        # y los extrae automáticamente del zip interno de GitHub.
+
+    - name: Listar archivos (Debug)
+      run: ls -R artifacts
+      # Esto es solo para que veas en los logs que están los .exe sueltos
+
+    - name: Crear Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: artifacts/*
+        # Esto tomará JuegoBalance-Windows.exe, JuegoBalance-Linux, etc.
+        # y los pondrá como assets descargables directos.
